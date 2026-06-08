@@ -1,0 +1,9 @@
+services:
+  snov-scraper:
+    build: .
+    container_name: snov-scraper
+    restart: unless-stopped
+    ports:
+      - "4009:4009"
+    environment:
+      - PLAYWRIGHT_HEADLESS=1

@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Company Scraper</title>
+  <style>
+    :root {
+      --bg:        #f0f2f8;
+      --card:      #ffffff;
+      --card-hi:   #f7f9fe;
+      --border:    #e0e6f2;
+      --border-hi: #c8d3e8;
+      --text:      #18243e;
+      --text-2:    #5a6a8c;
+      --muted:     #a0aec4;
+      --accent:    #5a67f2;
+      --accent-d:  rgba(90,103,242,.1);
+      --accent-h:  #4451e0;
+      --ok:        #0aaa74;
+      --err:       #e04040;
+      --mono:      'Cascadia Code','JetBrains Mono',Consolas,monospace;
+      --r:         8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter','Segoe UI',system-ui,sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    #badge {
+      display: flex; align-items: center; gap: 6px;
+      font-size: .7rem; padding: 4px 12px;
+      border-radius: 99px;
+      border: 1px solid var(--border-hi);
+      color: var(--text-2);
+      transition: all .25s;
+    }
+    #badge .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted); transition: background .25s;
+    }
+    #badge.running { border-color: var(--accent); color: var(--accent); }
+    #badge.running .dot { background: var(--accent); animation: pulse 1.4s infinite; }
+    #badge.done  { border-color: var(--ok);  color: var(--ok); }
+    #badge.done  .dot { background: var(--ok); }
+    #badge.error { border-color: var(--err); color: var(--err); }
+    #badge.error .dot { background: var(--err); }
+
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+    /* ── Progress line ─────────────────────────────────── */
+    #prog {
+      height: 2px; background: var(--border);
+      position: sticky; top: 0; z-index: 9;
+    }
+    #prog-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      transition: width .5s ease;
+    }
+
+    /* ── Page body ─────────────────────────────────────── */
+    .page {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ── Card ──────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+    }
+
+    .card-head {
+      padding: 11px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: .7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .1em;
+      color: var(--text-2);
+      display: flex; align-items: center; gap: 8px;
+      border-radius: var(--r) var(--r) 0 0;
+    }
+
+    .card-body {
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+
+    /* ── Field ─────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+
+    .field label {
+      font-size: .68rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .08em;
+      color: var(--text-2);
+    }
+
+    .field input,
+    .field textarea {
+      background: var(--card-hi);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 6px;
+      font-size: .84rem;
+      outline: none;
+      width: 100%;
+      font-family: inherit;
+      transition: border-color .15s, box-shadow .15s;
+    }
+
+    .field input:focus,
+    .field textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-d);
+    }
+
+    .field textarea {
+      font-family: var(--mono);
+      font-size: .69rem;
+      min-height: 90px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    .field .hint {
+      font-size: .63rem; color: var(--muted); line-height: 1.45;
+    }
+
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ── Multi-select (Company Size) ──────────────────── */
+    .ms-wrap { position: relative; }
+
+    .ms-box {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+      min-height: 38px;
+      background: var(--card-hi);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 36px 5px 8px;
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .ms-box:focus-within,
+    .ms-box.open {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-d);
+    }
+
+    .ms-chip {
+      display: flex; align-items: center; gap: 4px;
+      background: var(--accent-d); border: 1px solid var(--accent);
+      color: var(--accent); font-size: .7rem; font-weight: 600;
+      padding: 1px 7px; border-radius: 99px;
+    }
+    .ms-chip .x {
+      cursor: pointer; font-size: .75rem; line-height: 1;
+      color: var(--accent); opacity: .7;
+    }
+    .ms-chip .x:hover { opacity: 1; }
+
+    .ms-placeholder { font-size: .84rem; color: var(--muted); }
+
+    .ms-clear {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer;
+      font-size: .68rem; color: var(--accent); font-weight: 600;
+      display: none;
+    }
+    .ms-clear.show { display: block; }
+
+    .ms-dropdown {
+      display: none;
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.1);
+      z-index: 100;
+      overflow: hidden;
+    }
+    .ms-dropdown.open { display: block; }
+
+    .ms-opt {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 14px;
+      font-size: .84rem; cursor: pointer;
+      transition: background .1s;
+      border-bottom: 1px solid var(--border);
+    }
+    .ms-opt:last-child { border-bottom: none; }
+    .ms-opt:hover { background: var(--card-hi); }
+    .ms-opt.selected { color: var(--accent); font-weight: 500; }
+    .ms-opt .check { color: var(--accent); font-size: .8rem; opacity: 0; }
+    .ms-opt.selected .check { opacity: 1; }
+
+    /* ── Run button ────────────────────────────────────── */
+    #runBtn {
+      width: 100%; padding: 12px;
+      background: var(--accent);
+      color: #fff; border: none;
+      border-radius: var(--r);
+      font-size: .9rem; font-weight: 600;
+      cursor: pointer; letter-spacing: .03em;
+      transition: background .15s, transform .1s;
+    }
+    #runBtn:hover:not(:disabled) { background: var(--accent-h); }
+    #runBtn:active:not(:disabled) { transform: scale(.99); }
+    #runBtn:disabled {
+      background: var(--card-hi); color: var(--muted); cursor: not-allowed;
+    }
+
+    /* ── List name chip ────────────────────────────────── */
+    #listChip {
+      display: none;
+      background: var(--card);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--r);
+      padding: 10px 14px;
+      align-items: center; gap: 10px;
+    }
+    #listChip.show { display: flex; }
+    #listChip .lc-label {
+      font-size: .62rem; text-transform: uppercase;
+      letter-spacing: .1em; color: var(--muted);
+    }
+    #listChip .lc-value {
+      font-family: var(--mono); font-size: .82rem; color: var(--accent);
+    }
+
+    /* ── Log dropdown ──────────────────────────────────── */
+    details.log-drop {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+    }
+
+    details.log-drop summary {
+      padding: 11px 16px;
+      cursor: pointer;
+      list-style: none;
+      display: flex; align-items: center; gap: 8px;
+      font-size: .7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .1em;
+      color: var(--text-2);
+      user-select: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color .2s;
+    }
+    details.log-drop[open] summary {
+      border-bottom-color: var(--border);
+    }
+
+    details.log-drop summary::-webkit-details-marker { display: none; }
+
+    .sum-arrow {
+      font-size: .65rem; color: var(--muted);
+      transition: transform .2s;
+    }
+    details.log-drop[open] .sum-arrow { transform: rotate(90deg); }
+
+    .sum-spacer { flex: 1; }
+
+    #logCount {
+      font-size: .62rem; background: var(--accent-d);
+      border: 1px solid var(--accent); color: var(--accent);
+      padding: 1px 7px; border-radius: 99px; font-weight: 700;
+      display: none;
+    }
+    #logCount.show { display: inline-block; }
+
+    #terminal {
+      background: #f5f7fe;
+      padding: 13px 16px;
+      font-family: var(--mono);
+      font-size: .75rem;
+      line-height: 1.8;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    #terminal .ln { white-space: pre-wrap; word-break: break-all; }
+    #terminal .ln.step  { color: #3b4dd4; font-weight: 500; }
+    #terminal .ln.ok    { color: #0a9966; }
+    #terminal .ln.err   { color: #c93030; }
+    #terminal .ln.meta  { color: #7c3aed; }
+    #terminal .ln.plain { color: #6478a0; }
+    #terminal .cursor {
+      display: inline-block; width: 7px; height: 13px;
+      background: var(--accent);
+      animation: blink 1s infinite;
+      vertical-align: text-bottom; margin-left: 2px;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* ── Results ───────────────────────────────────────── */
+    #resultsCard { display: none; }
+    #resultsCard.show { display: block; }
+
+    .res-head {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .res-title {
+      font-size: .7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .1em; color: var(--text-2);
+    }
+    .res-count {
+      background: var(--accent-d); border: 1px solid var(--accent);
+      color: var(--accent); font-size: .62rem; padding: 1px 7px;
+      border-radius: 99px; font-weight: 700;
+    }
+    .res-btns { margin-left: auto; display: flex; gap: 6px; }
+    .res-btn {
+      background: none; border: 1px solid var(--border-hi);
+      color: var(--text-2); padding: 3px 10px;
+      border-radius: 5px; font-size: .68rem; cursor: pointer;
+      transition: all .15s;
+    }
+    .res-btn:hover        { border-color: var(--ok);     color: var(--ok); }
+    .res-btn.copy:hover   { border-color: var(--accent); color: var(--accent); }
+    .res-btn.clear:hover  { border-color: var(--err);    color: var(--err); }
+
+    .tbl-wrap { overflow-x: auto; }
+
+    table { width: 100%; border-collapse: collapse; font-size: .77rem; }
+
+    thead th {
+      background: var(--card-hi);
+      padding: 7px 14px; text-align: left;
+      font-size: .62rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:hover { background: var(--card-hi); }
+    tbody td { padding: 7px 14px; }
+    tbody td.no { color: var(--muted); width: 36px; font-family: var(--mono); }
+    tbody td a  { color: var(--accent); text-decoration: none; }
+    tbody td a:hover { text-decoration: underline; }
+    tbody td .na { color: var(--muted); }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--border); }
+    ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div id="prog"><div id="prog-fill"></div></div>
+
+<div class="page">
+
+  <!-- Cookies -->
+  <div class="card">
+    <div class="card-head">Add Cookies</div>
+    <div class="card-body">
+      <div class="field">
+        <textarea id="cookies"
+          placeholder="Paste session cookies here…&#10;&#10;Format A:  name=val; name2=val2&#10;Format B:  [{&quot;name&quot;:&quot;…&quot;,&quot;value&quot;:&quot;…&quot;}]"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="card">
+    <div class="card-head">Search Filters</div>
+    <div class="card-body">
+
+      <!-- Row 1 -->
+      <div class="row2">
+        <div class="field">
+          <label>Target Location</label>
+          <input id="location" type="text" value="Mumbai" placeholder="e.g. Mumbai" />
+        </div>
+        <div class="field">
+          <label>Target Industry</label>
+          <input id="industry" type="text" value="Fastener" placeholder="e.g. Fastener" />
+        </div>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="row2">
+        <div class="field">
+          <label>Company Size</label>
+          <div class="ms-wrap" id="sizeWrap">
+            <div class="ms-box" id="sizeBox" onclick="toggleSize()">
+              <span class="ms-placeholder" id="sizePlaceholder">Any size</span>
+            </div>
+            <button class="ms-clear" id="sizeClear" onclick="clearSizes(event)">Clear</button>
+            <div class="ms-dropdown" id="sizeDropdown">
+              <div class="ms-opt" onclick="toggleOpt(this,'Self')">Self <span class="check">✓</span></div>
+              <div class="ms-opt" onclick="toggleOpt(this,'1-10')">1-10 <span class="check">✓</span></div>
+              <div class="ms-opt" onclick="toggleOpt(this,'11-50')">11-50 <span class="check">✓</span></div>
+              <div class="ms-opt" onclick="toggleOpt(this,'51-200')">51-200 <span class="check">✓</span></div>
+              <div class="ms-opt" onclick="toggleOpt(this,'201-500')">201-500 <span class="check">✓</span></div>
+              <div class="ms-opt" onclick="toggleOpt(this,'501-1000')">501-1000 <span class="check">✓</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label>Max Records (Lead Count)</label>
+          <input id="maxCompanies" type="number" value="15" min="1" max="200" />
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- List name chip (shows after run starts) -->
+  <div id="listChip">
+    <div>
+      <div class="lc-label">Generated List Name</div>
+      <div class="lc-value" id="listChipVal">—</div>
+    </div>
+  </div>
+
+  <!-- Run + status -->
+  <div style="display:flex;align-items:center;gap:12px">
+    <button id="runBtn" onclick="startScrape()" style="flex:1">▶&nbsp; Run Scraper</button>
+    <div id="badge">
+      <div class="dot"></div>
+      <span id="badgeText">Idle</span>
+    </div>
+  </div>
+
+  <!-- Logs dropdown -->
+  <details class="log-drop" id="logDrop">
+    <summary>
+      <span class="sum-arrow">▶</span>
+      Logs
+      <span class="sum-spacer"></span>
+      <span id="logCount">0</span>
+    </summary>
+    <div id="terminal">
+      <div class="ln plain">  Ready. Fill in the fields above and click Run Scraper.</div>
+      <span class="cursor"></span>
+    </div>
+  </details>
+
+  <!-- Results -->
+  <div class="card" id="resultsCard">
+    <div class="res-head">
+      <span class="res-title">Results</span>
+      <span class="res-count" id="resCount">0</span>
+      <div class="res-btns">
+        <button class="res-btn copy" onclick="copyJSON()">Copy JSON</button>
+        <button class="res-btn" onclick="exportCSV()">↓ CSV</button>
+        <button class="res-btn clear" onclick="clearResults()">Clear</button>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr id="resHead"></tr></thead>
+        <tbody id="resBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- .page -->
+
+<script>
+  let _results = [];
+  let _logLines = 0;
+
+  /* badge */
+  function setBadge(state, text) {
+    const b = document.getElementById('badge');
+    b.className = state;
+    document.getElementById('badgeText').textContent = text;
+  }
+
+  /* progress bar */
+  function setProgress(n, total) {
+    document.getElementById('prog-fill').style.width =
+      Math.round((n / total) * 100) + '%';
+  }
+
+  /* terminal */
+  function termAppend(text, cls) {
+    const t = document.getElementById('terminal');
+    const cur = t.querySelector('.cursor');
+    if (cur) cur.remove();
+
+    const d = document.createElement('div');
+    d.className = 'ln ' + (cls || 'plain');
+    d.textContent = text;
+    t.appendChild(d);
+
+    const c = document.createElement('span');
+    c.className = 'cursor';
+    t.appendChild(c);
+    t.scrollTop = t.scrollHeight;
+
+    _logLines++;
+    const lc = document.getElementById('logCount');
+    lc.textContent = _logLines;
+    lc.classList.add('show');
+  }
+
+  function termClear() {
+    _logLines = 0;
+    document.getElementById('terminal').innerHTML = '<span class="cursor"></span>';
+    document.getElementById('logCount').classList.remove('show');
+  }
+
+  function classify(txt) {
+    if (txt.startsWith('▶'))                                              return 'step';
+    if (txt.includes('✔'))                                                return 'ok';
+    if (txt.includes('✗'))                                                return 'err';
+    if (/Auto-generated|Location\s*:|Industry\s*:|Max\s*:|Total:/.test(txt)) return 'meta';
+    return 'plain';
+  }
+
+  function parseStep(txt) {
+    const m = txt.match(/▶\s*\[(\d+)\/(\d+)\]/);
+    return m ? { n: +m[1], total: +m[2] } : null;
+  }
+
+  /* ── Results (append-across-runs) ─────────────────────── */
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ordered list of all unique columns across all accumulated results */
+  function getColumns() {
+    const seen = new Set();
+    _results.forEach(r => Object.keys(r).forEach(k => seen.add(k)));
+    const order = ['no','name','location','website'];
+    const cols = order.filter(k => seen.has(k));
+    seen.forEach(k => { if (!cols.includes(k)) cols.push(k); });
+    return cols;
+  }
+
+  function colLabel(k) {
+    const map = { no:'#', name:'Company Name', location:'Location', website:'Website' };
+    return map[k] || k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g,' ');
+  }
+
+  function rebuildTable() {
+    const cols = getColumns();
+
+    /* headers */
+    const head = document.getElementById('resHead');
+    head.innerHTML = cols.map(c =>
+      `<th${c==='no'?' style="width:36px"':''}>${esc(colLabel(c))}</th>`
+    ).join('');
+
+    /* rows */
+    const body = document.getElementById('resBody');
+    body.innerHTML = '';
+    _results.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = cols.map(c => {
+        const v = r[c];
+        if (c === 'no')      return `<td class="no">${v ?? ''}</td>`;
+        if (c === 'website') return v && v !== 'N/A'
+          ? `<td><a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a></td>`
+          : `<td><span class="na">—</span></td>`;
+        return `<td>${v != null ? esc(String(v)) : '<span class="na">—</span>'}</td>`;
+      }).join('');
+      body.appendChild(tr);
+    });
+
+    document.getElementById('resCount').textContent = _results.length;
+    document.getElementById('resultsCard').classList.add('show');
+  }
+
+  /* append new rows, renumber #, rebuild table */
+  function appendResults(newData) {
+    const start = _results.length + 1;
+    newData.forEach((r, i) => _results.push({ ...r, no: start + i }));
+    rebuildTable();
+  }
+
+  function clearResults() {
+    _results = [];
+    document.getElementById('resBody').innerHTML = '';
+    document.getElementById('resHead').innerHTML = '';
+    document.getElementById('resCount').textContent = '0';
+    document.getElementById('resultsCard').classList.remove('show');
+  }
+
+  function exportCSV() {
+    if (!_results.length) return;
+    const cols = getColumns();
+    const rows = [
+      cols.map(colLabel).map(h => `"${h}"`).join(','),
+      ..._results.map(r =>
+        cols.map(c => {
+          const v = r[c];
+          return v != null ? `"${String(v).replace(/"/g,'""')}"` : '';
+        }).join(',')
+      )
+    ];
+    const url = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), { href: url, download: 'companies.csv' }).click();
+    URL.revokeObjectURL(url);
+  }
+
+  function copyJSON() {
+    if (!_results.length) return;
+    navigator.clipboard.writeText(JSON.stringify(_results, null, 2)).then(() => {
+      const b = document.querySelector('.res-btn.copy');
+      const o = b.textContent;
+      b.textContent = '✔ Copied';
+      setTimeout(() => b.textContent = o, 1500);
+    });
+  }
+
+  /* ── Company Size multi-select ─────────────────────── */
+  const _sizes = new Set();
+
+  function toggleSize() {
+    const box = document.getElementById('sizeBox');
+    const dd  = document.getElementById('sizeDropdown');
+    const isOpen = dd.classList.contains('open');
+    if (isOpen) {
+      dd.classList.remove('open');
+      box.classList.remove('open');
+    } else {
+      dd.classList.add('open');
+      box.classList.add('open');
+    }
+  }
+
+  function toggleOpt(el, value) {
+    if (_sizes.has(value)) {
+      _sizes.delete(value);
+      el.classList.remove('selected');
+    } else {
+      _sizes.add(value);
+      el.classList.add('selected');
+    }
+    _renderChips();
+  }
+
+  function clearSizes(e) {
+    e.stopPropagation();
+    _sizes.clear();
+    document.querySelectorAll('#sizeDropdown .ms-opt').forEach(o => o.classList.remove('selected'));
+    _renderChips();
+  }
+
+  function removeSize(e, value) {
+    e.stopPropagation();
+    _sizes.delete(value);
+    document.querySelectorAll('#sizeDropdown .ms-opt').forEach(o => {
+      if (o.firstChild && o.firstChild.textContent.trim() === value) o.classList.remove('selected');
+    });
+    _renderChips();
+  }
+
+  function _renderChips() {
+    const box = document.getElementById('sizeBox');
+    const ph  = document.getElementById('sizePlaceholder');
+    const clr = document.getElementById('sizeClear');
+    box.querySelectorAll('.ms-chip').forEach(c => c.remove());
+    if (_sizes.size === 0) {
+      ph.style.display = '';
+      clr.classList.remove('show');
+    } else {
+      ph.style.display = 'none';
+      clr.classList.add('show');
+      _sizes.forEach(v => {
+        const chip = document.createElement('span');
+        chip.className = 'ms-chip';
+        chip.innerHTML = `${v} <span class="x" onclick="removeSize(event,'${v}')">×</span>`;
+        box.insertBefore(chip, ph);
+      });
+    }
+  }
+
+  document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('sizeWrap');
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById('sizeDropdown').classList.remove('open');
+      document.getElementById('sizeBox').classList.remove('open');
+    }
+  });
+
+  /* main */
+  async function startScrape() {
+    const cookies = document.getElementById('cookies').value.trim();
+    if (!cookies) { alert('Please paste your session cookies first.'); return; }
+
+    const location     = document.getElementById('location').value.trim()       || 'Mumbai';
+    const industry     = document.getElementById('industry').value.trim()       || 'Fastener';
+    const maxCompanies = parseInt(document.getElementById('maxCompanies').value) || 15;
+    const companySizes = [..._sizes];
+
+    termClear();
+    document.getElementById('listChip').classList.remove('show');
+    document.getElementById('prog-fill').style.width = '0%';
+    document.getElementById('logDrop').open = true;
+
+    setBadge('running', 'Running…');
+    const btn = document.getElementById('runBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳  Running…';
+
+    try {
+      const resp = await fetch('/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookies, location, industry, max_companies: maxCompanies, company_size: companySizes }),
+      });
+
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split('\n\n');
+        buffer = chunks.pop();
+
+        for (const chunk of chunks) {
+          if (!chunk.startsWith('data:')) continue;
+          const raw = chunk.replace(/^data:\s*/, '').trim();
+          if (!raw) continue;
+          let evt;
+          try { evt = JSON.parse(raw); } catch { continue; }
+
+          if (evt.type === 'log') {
+            const txt = evt.data;
+            termAppend(txt, classify(txt));
+            const s = parseStep(txt);
+            if (s) setProgress(s.n, s.total);
+
+          } else if (evt.type === 'meta' && evt.key === 'list_name') {
+            document.getElementById('listChipVal').textContent = evt.value;
+            document.getElementById('listChip').classList.add('show');
+
+          } else if (evt.type === 'done') {
+            termAppend('  ✔  Scrape complete.', 'ok');
+            setBadge('done', 'Done');
+            setProgress(12, 12);
+            appendResults(evt.data);
+
+          } else if (evt.type === 'error') {
+            termAppend(`  ✗  Error: ${evt.data}`, 'err');
+            setBadge('error', 'Error');
+          }
+        }
+      }
+    } catch (err) {
+      termAppend(`  ✗  Network error: ${err.message}`, 'err');
+      setBadge('error', 'Error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '▶  Run Scraper';
+    }
+  }
+</script>
+</body>
+</html>

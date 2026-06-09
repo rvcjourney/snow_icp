@@ -271,7 +271,7 @@ async def run_scraper(
 
         # ── 7. Search ─────────────────────────────────────────────────────────
         log_fn("▶ [7/12] Running search…")
-        await page.get_by_role("button", name="Search").click()
+        await page.locator('button[data-test="snov-btn"]:not(.snv-btn--secondary)').first.click()
         await page.wait_for_timeout(3000)
 
         # ── 7. Collect company data ───────────────────────────────────────────
